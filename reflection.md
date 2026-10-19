@@ -30,8 +30,11 @@ I also replaced the plain strings for priority and frequency with Enums, and use
 
 **b. Tradeoffs**
 
-- Describe one tradeoff your scheduler makes.
-- Why is that tradeoff reasonable for this scenario?
+My scheduler only warns about time conflicts; it does not resolve them. `detect_conflicts` finds tasks whose preferred-time windows overlap (start time plus duration, so a 30-minute task at 07:30 clashes with one at 07:45, not just an exact match). `conflict_warnings` turns those pairs into messages, and `generate_plan` keeps building the plan anyway. The plan is chosen by priority and available minutes, not by clock time, so two overlapping tasks can both end up in it with a warning attached.
+
+I also kept the simple version of the conflict check. The AI suggested sorting tasks by start time and breaking out of the inner loop early, which is faster, but it makes the overlap condition harder to follow. My version compares every pair, which is O(n²) but easy to read. A pet owner has tens of tasks a day, so the speed difference doesn't matter, and I would rather be able to read and debug the code.
+
+This is reasonable here because a preferred time is a preference, not a hard rule. If the scheduler silently moved or dropped a task, the owner could miss a medication or feeding without realizing it. A warning lets the owner decide what to move. The cost is that the plan can contain a clash the owner has to fix by hand.
 
 ---
 

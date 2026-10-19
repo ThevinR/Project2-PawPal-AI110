@@ -82,14 +82,49 @@ Sample test output:
 
 ## 📐 Smarter Scheduling
 
-> Fill in once you've implemented scheduling logic.
-
 | Feature | Method(s) | Notes |
 |---------|-----------|-------|
-| Task sorting | | e.g., by priority, duration |
-| Filtering | | e.g., skip tasks if time runs out |
-| Conflict handling | | e.g., overlapping time slots |
-| Recurring tasks | | e.g., daily vs. weekly |
+| Task sorting | `Scheduler.sort_tasks()`, `Scheduler.sort_by_time()` | Planning order, and chronological order |
+| Filtering | `Scheduler.filter_tasks()` | By pet name and/or completion status |
+| Conflict handling | `Scheduler.detect_conflicts()`, `Scheduler.conflict_warnings()` | Overlapping time windows, reported as warnings |
+| Recurring tasks | `Task.mark_complete()`, `Pet.complete_task()` | Daily and weekly tasks get a next occurrence |
+
+### Sorting
+
+- **`Scheduler.sort_tasks(tasks)`** orders tasks for planning: highest priority first, then earliest preferred time, then shortest duration. Tasks with no preferred time come after timed tasks of the same priority.
+- **`Scheduler.sort_by_time(tasks)`** orders tasks chronologically by `preferred_time` and ignores priority. Tasks with no time go last, and tasks sharing a time keep their original order.
+- Both return a new list and leave the input unchanged.
+
+### Filtering
+
+- **`Scheduler.filter_tasks(tasks, pet_name=None, completed=None)`** keeps only matching tasks.
+- `pet_name` keeps one pet's tasks. `completed=True` keeps done tasks, `completed=False` keeps pending ones, and `None` does not filter on completion.
+- The two filters combine, so `filter_tasks(tasks, pet_name="Rex", completed=False)` returns Rex's pending tasks.
+- `generate_plan()` uses it to leave completed tasks out of the plan.
+
+### Conflict detection
+
+- **`Scheduler.detect_conflicts(tasks)`** returns pairs of tasks whose time windows overlap. A task occupies `preferred_time` up to `preferred_time + duration`, so a 30-minute task at 07:30 conflicts with one at 07:45. Back-to-back tasks do not conflict.
+- It works within one pet and across different pets. Tasks with no valid `preferred_time` are skipped.
+- **`Scheduler.conflict_warnings(tasks)`** turns those pairs into messages and never raises:
+
+  ```
+  Warning (different pets): 'Vet call' (Rex, 09:00) overlaps 'Brushing' (Mia, 09:00)
+  ```
+
+- This is a lightweight check: it only warns. It does not move or drop tasks, so a plan can still contain a clash. `explain_plan()` includes the warnings for the planned tasks.
+- It compares every pair, which is O(n²). That is fine for a day's worth of tasks.
+
+### Recurring tasks
+
+- Each task has a `frequency` of `ONCE`, `DAILY` or `WEEKLY` and a `due_date`.
+- **`Task.mark_complete()`** marks the task done. For `DAILY` and `WEEKLY` tasks it returns a fresh pending copy due one day or one week later, with a new id. `ONCE` tasks return `None`.
+- **`Pet.complete_task(task_id)`** finds a task by id, completes it, and adds the next occurrence to the pet's tasks.
+- `generate_plan(today=None)` only plans tasks whose `due_date` is on or before `today`, so the next occurrence doesn't appear until its day.
+
+### Plan generation
+
+**`Scheduler.generate_plan()`** goes through pending tasks in `sort_tasks` order and adds each one that fits in the owner's remaining minutes. A task that doesn't fit is skipped, but a later, shorter one can still fit. Clock times are not enforced.
 
 ## 📸 Demo Walkthrough
 
