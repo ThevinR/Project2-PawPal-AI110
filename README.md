@@ -53,6 +53,33 @@ PawPal+ is built from four classes in `pawpal_system.py`.
 
 **How they fit together:** an Owner has Pets, a Pet has Tasks, and the Scheduler depends only on the Owner. `generate_plan()` collects all pending tasks, keeps the highest-priority ones that fit in the time available, and records the rest as skipped. `explain_plan()` then reports what was planned, what was skipped and why, and any conflicts. `main.py` shows this end to end with one owner, two pets, and five tasks.
 
+## ✨ Features
+
+Every feature below is implemented in `pawpal_system.py` and covered by the test suite.
+
+| Feature | What it does | Implemented in |
+|---|---|---|
+| **Multi-pet task tracking** | One owner holds many pets, each pet holds its own tasks. Adding a task stamps it with the pet's name, so any task can say whose it is even after the lists are merged. | `Owner.add_pet()`, `Pet.add_task()`, `Owner.get_all_tasks()` |
+| **Sorting by priority (planning order)** | Orders tasks high → medium → low; ties break on earliest preferred time, then on shortest duration. Untimed tasks fall behind timed ones of the same priority. The sort is stable, so identical tasks keep the order you added them in. | `Scheduler.sort_tasks()` |
+| **Sorting by time (chronological)** | Orders tasks purely by clock time and ignores priority entirely — this is the "what does my day look like" view. Untimed tasks go last. | `Scheduler.sort_by_time()` |
+| **Filtering by pet and status** | Narrows a task list to one pet, to pending-only or done-only, or both at once (the filters AND together). The planner reuses this to exclude completed tasks. | `Scheduler.filter_tasks()` |
+| **Conflict detection** | Treats each task as occupying the half-open window `[preferred_time, preferred_time + duration)` and returns every overlapping pair. Back-to-back tasks correctly do **not** conflict. Works within one pet and across different pets. Tasks with no valid time are skipped rather than raising. | `Scheduler.detect_conflicts()` |
+| **Conflict warnings** | Turns those pairs into readable sentences that say whether the clash is within one pet or between two, and never raises on bad data. This is advisory only — it warns, it does not move or drop tasks. | `Scheduler.conflict_warnings()` |
+| **Daily and weekly recurrence** | Completing a `DAILY` task returns a fresh pending copy due one day later; `WEEKLY` advances seven days. The copy gets a new id, so the completed original stays in the history. `ONCE` tasks simply finish. | `Task.mark_complete()`, `Pet.complete_task()` |
+| **Due-date awareness** | The planner only considers tasks due on or before the target day, so a recurring task's next occurrence stays out of today's plan until its date arrives. Overdue tasks are still picked up. | `Scheduler.generate_plan(today=...)` |
+| **Greedy time-budgeted planning** | Walks tasks in planning order and takes each one that fits the owner's remaining minutes. A task that doesn't fit is recorded as skipped and the loop continues — so one oversized task can't starve the rest of the day. | `Scheduler.generate_plan()` |
+| **Plain-language explanation** | Reports minutes used vs. available, every planned task, every skipped task with its reason, and any conflicts inside the plan. | `Scheduler.explain_plan()` |
+
+**Known limitations** (both deliberately pinned by tests): time windows do not wrap around midnight, and completing an already-completed recurring task will spawn a duplicate occurrence.
+
+## 📐 Final UML
+
+The diagram below matches the shipped code in `pawpal_system.py`. Source: [`diagrams/uml_final.mmd`](diagrams/uml_final.mmd).
+
+![PawPal+ class diagram](diagrams/uml_final.png)
+
+An **Owner** aggregates **Pets**, a **Pet** aggregates **Tasks**, and the **Scheduler** holds one Owner and reads every task through it. `Task` depends on the `Priority` and `Frequency` enums, and on itself: a recurring task's `mark_complete()` returns the next occurrence.
+
 ## 🖥️ Sample Output
 
 Paste a sample of your app's CLI or Streamlit output here so a reader can see what a generated plan looks like:
@@ -155,12 +182,128 @@ Both are deliberate known behaviors with tests pinning them down, so a future fi
 
 ## 📸 Demo Walkthrough
 
-Describe your app in numbered steps so a reader can follow along without watching a video:
+### Running it
 
-1. <!-- Describe this step -->
-2. <!-- Describe this step -->
-3. <!-- Describe this step -->
-4. <!-- Describe this step -->
-5. <!-- Add more steps as needed -->
+```bash
+streamlit run app.py   # the full app
+python main.py         # the CLI demo, no UI needed
+```
 
-**Screenshot or video** *(optional)*: <!-- Insert a screenshot or link to a demo video here -->
+### The interface
+
+The Streamlit app is a single scrolling page in four parts:
+
+1. **Owner** — your name and how many minutes you have today. The minute budget is the constraint the whole plan is built around.
+2. **Pets** — add a pet by name and species. Duplicate names and blank names are rejected with an inline message.
+3. **Tasks** — add a care task with a title, duration, priority, repeat rule (`once` / `daily` / `weekly`), and an optional preferred time. Clearing the "Set a preferred time" checkbox makes the task untimed, which is how you enter things like "fetch, sometime today."
+4. **Build Schedule** — generates today's plan.
+
+Once you have at least one task, three extra controls appear above the task table:
+
+- **Show pet** — all pets, or one.
+- **Show status** — all, pending, or done.
+- **Order by** — *Priority (planning order)* or *Time of day*. These are the two different sorts, and switching between them on the same list is the clearest way to see that they disagree on purpose.
+
+Below the table you can **mark a task complete**. For a recurring task the app confirms the next due date; for a one-off it says the task doesn't repeat.
+
+### An example workflow
+
+1. Set your available time to **90 minutes**.
+2. Add two pets: **Rex** (dog) and **Mia** (cat).
+3. Add tasks: Rex's *Morning walk* (30 min, high, 07:30) and *Grooming* (40 min, low, 16:00); Mia's *Breakfast* (10 min, high, 08:00) and *Medication* (5 min, high, 12:00). Add Rex's *Fetch* (15 min, medium) with the time checkbox cleared.
+4. Set **Order by** to *Time of day* — the tasks appear 07:30 → 08:00 → 12:00 → 16:00, with the untimed *Fetch* last. Switch to *Priority* and the three high-priority tasks jump to the top regardless of clock time, while *Grooming* drops to the bottom.
+5. Set **Show pet** to *Mia* — only her two tasks remain.
+6. Add a clash on purpose: Rex's *Vet call* (20 min, 09:00) and Mia's *Brushing* (10 min, 09:00). A yellow warning appears naming both tasks and flagging it as a **different pets** conflict. The green "No scheduling conflicts" banner is gone.
+7. Click **Generate schedule**. A green banner reports the minutes used of the 90 available, a table lists the planned tasks, and a second table lists what was skipped. Expand **Why this plan?** for the reasoning in plain English.
+8. Mark *Morning walk* complete. Because it repeats daily, the app confirms the next occurrence's date — and that new task will **not** appear in today's plan, because it isn't due yet.
+
+### Key Scheduler behaviors on display
+
+| Behavior | Where you see it |
+|---|---|
+| Two different sorts, deliberately disagreeing | The **Order by** dropdown in step 4 |
+| Filtering, combining pet and status | **Show pet** / **Show status** in step 5 |
+| Conflict warnings labelled by same-pet vs. different-pets | The warning banner in step 6 |
+| Greedy budget fitting, and skip-and-continue | The planned and skipped tables in step 7 — *Grooming* (40 min) is skipped while shorter, later tasks still fit |
+| Daily recurrence plus due-date filtering | The completion message in step 8 |
+
+### Sample CLI output
+
+`python main.py` runs the same logic headless, with one owner, two pets and six tasks added deliberately out of order:
+
+```
+As added (out of order)
+-----------------------
+   16:00  Grooming       Rex    40 min  [low   ] todo
+any time  Fetch          Rex    15 min  [medium] todo
+   07:30  Morning walk   Rex    30 min  [high  ] done
+   18:00  Play session   Mia    20 min  [medium] done
+   12:00  Medication     Mia     5 min  [high  ] todo
+   08:00  Breakfast      Mia    10 min  [high  ] todo
+
+sort_by_time
+------------
+   07:30  Morning walk   Rex    30 min  [high  ] done
+   08:00  Breakfast      Mia    10 min  [high  ] todo
+   12:00  Medication     Mia     5 min  [high  ] todo
+   16:00  Grooming       Rex    40 min  [low   ] todo
+   18:00  Play session   Mia    20 min  [medium] done
+any time  Fetch          Rex    15 min  [medium] todo
+
+sort_tasks (priority, then time, then length)
+---------------------------------------------
+   07:30  Morning walk   Rex    30 min  [high  ] done
+   08:00  Breakfast      Mia    10 min  [high  ] todo
+   12:00  Medication     Mia     5 min  [high  ] todo
+   18:00  Play session   Mia    20 min  [medium] done
+any time  Fetch          Rex    15 min  [medium] todo
+   16:00  Grooming       Rex    40 min  [low   ] todo
+
+filter_tasks: pet_name='Rex'
+----------------------------
+   16:00  Grooming       Rex    40 min  [low   ] todo
+any time  Fetch          Rex    15 min  [medium] todo
+   07:30  Morning walk   Rex    30 min  [high  ] done
+
+filter_tasks: completed=True
+----------------------------
+   07:30  Morning walk   Rex    30 min  [high  ] done
+   18:00  Play session   Mia    20 min  [medium] done
+
+filter_tasks: pet_name='Mia', completed=False, sorted by time
+-------------------------------------------------------------
+   08:00  Breakfast      Mia    10 min  [high  ] todo
+   12:00  Medication     Mia     5 min  [high  ] todo
+
+Conflict check before adding a clash
+------------------------------------
+No conflicts.
+
+Conflict check after adding two tasks at 09:00
+----------------------------------------------
+Warning (different pets): 'Vet call' (Rex, 09:00) overlaps 'Brushing' (Mia, 09:00)
+
+Today's plan (90 min available)
+-------------------------------
+   08:00  Breakfast      Mia    10 min  [high  ] todo
+   09:00  Vet call       Rex    20 min  [medium] todo
+   09:00  Brushing       Mia    10 min  [low   ] todo
+   12:00  Medication     Mia     5 min  [high  ] todo
+any time  Fetch          Rex    15 min  [medium] todo
+
+Why this plan:
+Planned 60 of 90 available minutes (highest priority first, then earliest preferred time, then shortest).
+- Mia: Breakfast (10 min, high) at 08:00
+- Mia: Medication (5 min, high) at 12:00
+- Rex: Vet call (20 min, medium) at 09:00
+- Rex: Fetch (15 min, medium)
+- Mia: Brushing (10 min, low) at 09:00
+- Skipped Rex: Grooming (40 min, low): not enough time left
+Warning (different pets): 'Vet call' (Rex, 09:00) overlaps 'Brushing' (Mia, 09:00)
+```
+
+Three things worth noticing in that output:
+
+- **The two sorts genuinely differ.** `sort_by_time` puts *Grooming* (16:00, low) fifth; `sort_tasks` puts it dead last behind an untimed medium task.
+- **The plan is not conflict-free.** *Vet call* and *Brushing* both landed at 09:00 and both got planned. The scheduler warns rather than resolving — it has no authority to move your vet appointment.
+- **Skipping doesn't stop the loop.** *Grooming* needed 40 minutes and only 30 remained, so it was skipped — but *Fetch* (15 min) still fit afterwards.
