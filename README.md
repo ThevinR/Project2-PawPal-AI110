@@ -63,22 +63,49 @@ Paste a sample of your app's CLI or Streamlit output here so a reader can see wh
 - Mia: Medication (5 min, high) at 12:00
 - Mia: Play session (20 min, medium) at 18:00
 - Skipped Rex: Grooming (40 min, low): not enough time left
+```
 
 ## 🧪 Testing PawPal+
 
+Run the full suite from the project root:
+
 ```bash
-# Run the full test suite:
-pytest
-
-# Run with coverage:
-pytest --cov
+python -m pytest
 ```
 
-Sample test output:
+### What the tests cover
+
+The suite in `tests/test_pawpal.py` has 34 tests across the behaviors that matter most for a scheduler, split between happy paths and edge cases.
+
+| Area | Happy paths | Edge cases |
+|------|-------------|------------|
+| **Sorting** | `sort_tasks` applies all three keys in order (priority → preferred time → duration); `sort_by_time` is chronological | Timed tasks sort before untimed ones of the same priority; identical tasks keep insertion order via Python's stable sort; the two sorts deliberately disagree on a low-priority-early vs. high-priority-late pair; empty lists and input-not-mutated |
+| **Recurrence** | Completing a `DAILY` task adds one new pending task due the next day with a new id; `WEEKLY` advances seven days | `ONCE` tasks don't recur; weekly recurrence across a month boundary (Jan 28 → Feb 4); unknown task ids are a no-op for both `complete_task` and `remove_task`; completing a task twice recurs twice (documented, see below) |
+| **Conflict detection** | Two tasks at the exact same time are flagged; overlapping windows are flagged within one pet and across pets, and labelled accordingly | Back-to-back tasks don't conflict (half-open windows); untimed tasks are ignored; an invalid `preferred_time` warns instead of crashing; zero-duration tasks never conflict; a task running past midnight does not wrap around (documented, see below); empty and single-task lists |
+| **Plan generation** | Tasks that fit the budget are all planned; an exact-fit budget leaves nothing skipped; `explain_plan` reports planned minutes, skip reasons and conflicts | A pet with no tasks and an owner with no pets both yield an empty plan; zero available minutes skips everything; an oversized task is skipped but a later shorter task still fits; completed tasks excluded and overdue ones included; re-running `generate_plan` resets prior results |
+
+### Sample test output
 
 ```
-# Paste your pytest output here
+============================= test session starts =============================
+platform win32 -- Python 3.14.3, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\thevi\Project2-PawPal-AI110
+plugins: anyio-4.15.1
+collected 34 items
+
+tests\test_pawpal.py ..................................                  [100%]
+
+============================= 34 passed in 0.04s ==============================
 ```
+
+### Confidence level: ★★★★☆ (4 / 5)
+
+Every documented behavior is covered by a passing test, including the empty-state and tie-breaking cases that usually hide bugs, so I'd trust the core scheduling logic. One star is held back for two limitations the tests *document* rather than fix:
+
+- **Midnight wraparound.** `_minutes()` has no modulo, so a 23:50 task lasting 30 minutes never conflicts with a 00:05 task the next morning.
+- **Double completion.** `Task.mark_complete()` doesn't check `is_completed`, so completing an already-finished recurring task spawns a duplicate next occurrence from the same `due_date`.
+
+Both are deliberate known behaviors with tests pinning them down, so a future fix will be caught immediately — but until they're resolved the system isn't fully reliable at those boundaries.
 
 ## 📐 Smarter Scheduling
 
