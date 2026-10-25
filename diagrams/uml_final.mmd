@@ -1,0 +1,66 @@
+classDiagram
+    class Priority {
+        <<enumeration>>
+        LOW = 1
+        MEDIUM = 2
+        HIGH = 3
+    }
+
+    class Frequency {
+        <<enumeration>>
+        ONCE
+        DAILY
+        WEEKLY
+    }
+
+    class Task {
+        +str title
+        +int duration_minutes
+        +Priority priority
+        +str pet_name
+        +Optional~time~ preferred_time
+        +Frequency frequency
+        +bool is_completed
+        +date due_date
+        +str id
+        +mark_complete() Optional~Task~
+    }
+
+    class Pet {
+        +str name
+        +str species
+        +List~Task~ tasks
+        +add_task(task) None
+        +complete_task(task_id) Optional~Task~
+        +remove_task(task_id) None
+    }
+
+    class Owner {
+        +str name
+        +int available_minutes
+        +List~Pet~ pets
+        +add_pet(pet) None
+        +get_all_tasks() List~Task~
+    }
+
+    class Scheduler {
+        +Owner owner
+        +List~Task~ plan
+        +List~Task~ skipped
+        +get_tasks() List~Task~
+        +sort_tasks(tasks) List~Task~
+        +sort_by_time(tasks) List~Task~
+        +filter_tasks(tasks, pet_name, completed) List~Task~
+        +detect_conflicts(tasks) List~tuple~
+        +conflict_warnings(tasks) List~str~
+        +generate_plan(today) List~Task~
+        +explain_plan() str
+    }
+
+    Owner "1" o-- "*" Pet : has
+    Pet "1" o-- "*" Task : has
+    Scheduler "1" --> "1" Owner : reads tasks through
+    Scheduler ..> Task : sorts, filters, plans
+    Task ..> Priority : uses
+    Task ..> Frequency : uses
+    Task ..> Task : creates next occurrence
